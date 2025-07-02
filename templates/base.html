@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}EKS Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <a href="{{ url_for('read_dashboard') }}">
+                    <!-- Using the provided CloudKeeper logo URL -->
+                    <img src="https://static.cloudonomic.com/app-logo/CK%20PRO/logo" alt="CloudKeeper Logo" class="logo">
+                </a>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="{{ url_for('read_dashboard') }}" class="nav-item">
+                    <i data-feather="grid"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="{{ url_for('list_clusters') }}" class="nav-item">
+                    <i data-feather="server"></i>
+                    <span>Clusters</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <header class="main-header">
+                <h1 class="page-title">{% block page_title %}Dashboard Overview{% endblock %}</h1>
+                <div class="header-actions">
+                    <span id="last-refreshed-time" class="last-refreshed"></span>
+                    <button id="refresh-data-btn" class="action-btn" title="Refresh All Data">
+                     <i data-feather="refresh-cw"></i>
+                    </button>
+                    {% if request.state.user %}
+                    <div class="user-menu">
+                         <div class="user-info">
+                            <div class="welcome">Welcome, {% set email = request.state.user.email %}{{ email.split('@')[0] }}</div>
+                            <a href="{{ url_for('saml_logout') }}" class="logout-link">Logout</a>
+                         </div>
+                         <div class="user-avatar">
+                            {{ request.state.user.email[0] | upper }}
+                         </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </header>
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script>
+        feather.replace() // Initialize Feather Icons
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const globalRefreshBtn = document.getElementById('refresh-data-btn');
+            if (globalRefreshBtn) {
+                globalRefreshBtn.addEventListener('click', async (e) => {
+                    const btn = e.currentTarget;
+                    const icon = btn.querySelector('svg');
+                    
+                    if (icon) icon.classList.add('spin');
+                    btn.disabled = true;
+                    
+                    try {
+                        const response = await fetch('/api/refresh-data', { method: 'POST' });
+                        if (response.ok) {
+                            window.location.reload();
+                        } else {
+                            alert('Failed to refresh data. Please try again.');
+                        }
+                    } catch (error) {
+                        console.error('Refresh error:', error);
+                        alert('An error occurred while refreshing data.');
+                    } finally {
+                        // This might not run if page reloads, but good practice
+                        if (icon) icon.classList.remove('spin');
+                        btn.disabled = false;
+                    }
+                });
+            }
+
+            // --- Last Refreshed Time ---
+            const lastRefreshedTime = new Date("{{ request.state.now.isoformat() if request.state.now else '' }}");
+            const lastRefreshedSpan = document.getElementById('last-refreshed-time');
+            if (lastRefreshedSpan && lastRefreshedTime.valueOf()) {
+                // MODIFICATION: Changed "Data as of:" to "Last Updated:"
+                lastRefreshedSpan.textContent = `Last Updated: ${lastRefreshedTime.toLocaleTimeString()}`;
+                lastRefreshedSpan.title = `Data loaded at ${lastRefreshedTime.toISOString()}`;
+            }
+
+            // --- Sidebar Active State ---
+            const currentPath = window.location.pathname;
+            const navLinks = document.querySelectorAll('.sidebar-nav .nav-item');
+            let activeLinkFound = false;
+
+            navLinks.forEach(link => {
+                const linkPath = link.getAttribute('href');
+                if (currentPath === linkPath) {
+                    link.classList.add('active');
+                    activeLinkFound = true;
+                } else {
+                    link.classList.remove('active');
+                }
+            });
+
+            if (!activeLinkFound) {
+                 navLinks.forEach(link => {
+                    const linkPath = link.getAttribute('href');
+                    if (currentPath.startsWith('/clusters') && linkPath === '/clusters') {
+                        link.classList.add('active');
+                    }
+                });
+            }
+        });
+    </script>
+    {% block scripts_extra %}{% endblock %}
+</body>
+</html>

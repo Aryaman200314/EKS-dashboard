@@ -1,0 +1,32 @@
+<!-- Add-ons Tab -->
+<div id="addons" class="tab-content">
+     <div class="widget">
+        <div class="widget-header"><h2>Cluster Add-ons</h2></div>
+        <div class="widget-content" style="padding:0;">
+            <div class="table-container">
+                <table class="data-table">
+                    <thead><tr><th>Name</th><th>Version</th><th>Status</th><th>EKS Pod Identity</th><th>IAM role for service account (IRSA)</th></tr></thead>
+                    <tbody>
+                        {% for addon in cluster.addons %}
+                        <tr>
+                            <td>{{ addon.addonName }}</td>
+                            <td>{{ addon.addonVersion }}</td>
+                            <td><span class="status-badge status-{{ addon.status.lower() if addon.status else 'unknown' }}">{{ addon.status }}</span></td>
+                            <td>{{ addon.pod_identity_display or 'Not set' }}</td>
+                            <td>
+                                {% if addon.irsa_role_arn %}
+                                    <span class="code" title="{{ addon.irsa_role_arn }}">{{ addon.irsa_role_arn.split('/')[-1] }}</span>
+                                {% else %}
+                                    Not set
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="text-muted" style="text-align: center; padding: 2rem;">No add-ons found for this cluster.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
