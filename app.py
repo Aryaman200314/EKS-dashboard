@@ -95,7 +95,7 @@ def get_dashboard_data(user: dict):
         return cache[cache_key]
     else:
         logging.info(f"Cache MISS for dashboard data: user='{user.get('email')}'")
-        dashboard_data = get_live_eks_data(user_groups, group_map_str)
+        dashboard_data = get_live_eks_data()
         if not dashboard_data.get("errors"):
             cache[cache_key] = dashboard_data
         return dashboard_data
