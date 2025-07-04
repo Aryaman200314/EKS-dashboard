@@ -7,31 +7,56 @@
 <style>
     .filters-bar {
         background-color: var(--surface-color);
-        padding: 15px 20px;
-        border-radius: 8px;
         border: 1px solid var(--border-color);
-        display: flex;
-        gap: 20px;
-        align-items: center;
-        flex-wrap: wrap;
+        border-radius: 10px;
+        padding: 20px;
         margin-bottom: 25px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        align-items: flex-end;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
     }
+    
     .filter-item {
         display: flex;
         flex-direction: column;
+        min-width: 200px;
     }
+    
     .filter-item label {
         font-size: 0.8rem;
-        font-weight: 500;
+        font-weight: 600;
         color: var(--text-muted);
-        margin-bottom: 5px;
+        margin-bottom: 6px;
     }
-    .filter-item select, .filter-item input {
-        min-width: 180px;
+    
+    .filter-item select,
+    .filter-item input {
+        padding: 6px 10px;
+        font-size: 0.9rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background-color: var(--background-color);
+        color: var(--text-primary);
     }
+    
     .filters-bar .action-button {
         margin-left: auto;
+        padding: 8px 14px;
+        font-size: 0.9rem;
+        background-color: var(--primary-color);
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
     }
+    
+    .filters-bar .action-button:hover {
+        background-color: var(--primary-color-dark, #246cd8);
+    }
+    
 
     .cluster-grid {
         display: grid;
@@ -97,21 +122,22 @@
 {% endblock %}
 
 {% block content %}
-    <div class="filters-bar">
-        <div class="filter-item">
-            <label for="filter-account">Account ID</label>
-            <select id="filter-account"></select>
-        </div>
-        <div class="filter-item">
-            <label for="filter-region">Region</label>
-            <select id="filter-region"></select>
-        </div>
-        <div class="filter-item">
-            <label for="filter-version">Version</label>
-            <select id="filter-version"></select>
-        </div>
-        <button id="reset-filters-btn" class="action-button">Reset Filters</button>
+<div class="filters-bar">
+    <div class="filter-item">
+        <label for="filter-account">Account ID</label>
+        <select id="filter-account"></select>
     </div>
+    <div class="filter-item">
+        <label for="filter-region">Region</label>
+        <select id="filter-region"></select>
+    </div>
+    <div class="filter-item">
+        <label for="filter-version">Version</label>
+        <select id="filter-version"></select>
+    </div>
+    <button id="reset-filters-btn" class="action-button">Reset Filters</button>
+</div>
+
 
     <div class="cluster-grid" id="cluster-grid-container">
         {% for cluster in clusters %}
