@@ -1,14 +1,67 @@
 <!-- Compute Tab -->
 <div id="compute" class="tab-content">
+
+    <!-- Styles for Node Group filter and count -->
+    <style>
+    .widget-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--border-color);
+        background-color: var(--surface-color);
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+    }
+
+    .widget-header h2 {
+        margin: 0;
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .resource-filters {
+        display: flex;
+        align-items: center;
+    }
+
+    .resource-filters select.form-select {
+        padding: 8px 12px;
+        font-size: 0.9rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background-color: var(--background-color);
+        color: var(--text-primary);
+        outline: none;
+        transition: border-color 0.2s ease-in-out;
+        min-width: 220px;
+    }
+
+    .resource-filters select.form-select:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(60, 132, 244, 0.2);
+    }
+
+    .node-count-wrapper {
+        font-weight: 500;
+        font-size: 0.95rem;
+        color: var(--text-muted);
+        margin-left: 8px;
+    }
+    </style>
+
     <!-- Nodes Section -->
     <div class="widget">
         <div class="widget-header">
             <h2>
-                Nodes 
-                <span id="node-count-wrapper" class="text-muted" style="display: none;">(<span id="node-count">0</span>)</span>
+                Nodes
+                <span id="node-count-wrapper" class="node-count-wrapper" style="display: none;">
+                    (<span id="node-count">0</span>)
+                </span>
             </h2>
             <div class="resource-filters">
-                <select id="nodegroup-filter" class="form-select" style="min-width: 220px;">
+                <select id="nodegroup-filter" class="form-select">
                     <option value="all">All Node Groups</option>
                     {% for ng in cluster.nodegroups_data if not ng.is_karpenter_node %}
                     <option value="{{ ng.name }}">{{ ng.name }}</option>
@@ -111,12 +164,7 @@
         <div class="widget-content" style="padding:0;">
             <div class="table-container">
                 <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>Name</th><th>Status</th></tr></thead>
                     <tbody>
                         {% for profile in cluster.fargate_profiles %}
                         <tr>
@@ -137,46 +185,36 @@
     </div>
 </div>
 
-<!-- JavaScript for dynamic node count visibility -->
+<!-- JS to control dynamic count and visibility -->
 <script>
 function updateNodeCount() {
     const filter = document.getElementById('nodegroup-filter');
-    const counterWrapper = document.getElementById('node-count-wrapper');
-    const counter = document.getElementById('node-count');
+    const countWrapper = document.getElementById('node-count-wrapper');
+    const count = document.getElementById('node-count');
 
-    const selectedValue = filter?.value;
+    if (!filter || !countWrapper || !count) return;
 
-    if (!filter || !counter || !counterWrapper) return;
+    const selectedValue = filter.value;
 
     // Hide count if "all" is selected
     if (selectedValue === 'all') {
-        counterWrapper.style.display = 'none';
+        countWrapper.style.display = 'none';
         return;
-    } else {
-        counterWrapper.style.display = 'inline';
     }
 
-    // Count only visible rows
+    // Show count and calculate
+    countWrapper.style.display = 'inline';
     const rows = document.querySelectorAll('#nodes-table tbody tr');
     let visibleCount = 0;
-
     rows.forEach(row => {
-        const style = window.getComputedStyle(row);
-        const isVisible = (
-            style.display !== 'none' &&
-            style.visibility !== 'hidden' &&
-            row.offsetParent !== null
-        );
+        const isVisible = row.offsetParent !== null && row.style.display !== 'none';
         if (isVisible) visibleCount++;
     });
-
-    counter.textContent = visibleCount;
+    count.textContent = visibleCount;
 }
 
 function runAfterRender(callback) {
-    requestAnimationFrame(() => {
-        setTimeout(callback, 0);
-    });
+    requestAnimationFrame(() => setTimeout(callback, 0));
 }
 
 window.addEventListener('load', () => {
