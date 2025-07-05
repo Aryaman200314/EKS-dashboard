@@ -1,5 +1,16 @@
 <!-- Analysis & Insights Tab -->
 <div id="insights" class="tab-content">
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        #insights.fade-in {
+            animation: fadeIn 0.2s ease-in-out;
+        }
+    </style>
+
     <div class="widget">
         <div class="widget-header"><h2><i data-feather="shield"></i> Security Best Practices</h2></div>
         <div class="widget-content" style="padding:0;">
@@ -11,9 +22,17 @@
                         {% for key, insight in cluster.security_insights.items() if key != 'logging_enabled' %}
                         <tr>
                             <td>{{ insight.description }}</td>
-                            <td style="text-align: center;"><span class="status-badge status-{{ 'active' if insight.status else 'failed' }}">{{ 'Passing' if insight.status else 'Attention' }}</span></td>
+                            <td style="text-align: center;">
+                                <span class="status-badge status-{{ 'active' if insight.status else 'failed' }}">
+                                    {{ 'Passing' if insight.status else 'Attention' }}
+                                </span>
+                            </td>
                             <td class="text-secondary">
-                                {% if key == 'latest_platform_version' and not insight.status %}Current: {{ insight.current }}, Latest: {{ insight.latest }}{% else %}-{% endif %}
+                                {% if key == 'latest_platform_version' and not insight.status %}
+                                    Current: {{ insight.current }}, Latest: {{ insight.latest }}
+                                {% else %}
+                                    -
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -21,7 +40,9 @@
                 </table>
             </div>
             {% else %}
-            <p class="text-muted" style="text-align:center; padding: 2rem;">Security insights could not be generated for this cluster.</p>
+            <p class="text-muted" style="text-align:center; padding: 2rem;">
+                Security insights could not be generated for this cluster.
+            </p>
             {% endif %}
         </div>
     </div>
@@ -44,8 +65,19 @@
                 {% endfor %}
                 </ul>
             {% else %}
-            <p class="text-muted" style="text-align:center;">Logging status information is not available.</p>
+            <p class="text-muted" style="text-align:center;">
+                Logging status information is not available.
+            </p>
             {% endif %}
         </div>
     </div>
 </div>
+
+<script>
+    window.addEventListener('load', () => {
+        const tab = document.getElementById('insights');
+        if (tab) {
+            tab.classList.add('fade-in');
+        }
+    });
+</script>

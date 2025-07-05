@@ -1,11 +1,38 @@
-<!-- Add-ons Tab -->
 <div id="addons" class="tab-content">
-     <div class="widget">
-        <div class="widget-header"><h2>Cluster Add-ons</h2></div>
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        #addons.fade-in {
+            animation: fadeIn 0.2s ease-in-out;
+        }
+    </style>
+
+    <div class="widget">
+        <div class="widget-header">
+            <h2>
+                Cluster Add-ons
+                {% if cluster.addons %}
+                    <span class="node-count-wrapper" style="font-weight: normal; font-size: 0.95rem; color: var(--text-muted); margin-left: 8px;">
+                        ({{ cluster.addons | length }})
+                    </span>
+                {% endif %}
+            </h2>
+        </div>
         <div class="widget-content" style="padding:0;">
             <div class="table-container">
                 <table class="data-table">
-                    <thead><tr><th>Name</th><th>Version</th><th>Status</th><th>EKS Pod Identity</th><th>IAM role for service account (IRSA)</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Version</th>
+                            <th>Status</th>
+                            <th>EKS Pod Identity</th>
+                            <th>IAM role for service account (IRSA)</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         {% for addon in cluster.addons %}
                         <tr>
@@ -22,7 +49,11 @@
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="5" class="text-muted" style="text-align: center; padding: 2rem;">No add-ons found for this cluster.</td></tr>
+                        <tr>
+                            <td colspan="5" class="text-muted" style="text-align: center; padding: 2rem;">
+                                No add-ons found for this cluster.
+                            </td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -30,3 +61,12 @@
         </div>
     </div>
 </div>
+
+<script>
+    window.addEventListener('load', () => {
+        const addonsTab = document.getElementById('addons');
+        if (addonsTab) {
+            addonsTab.classList.add('fade-in');
+        }
+    });
+</script>

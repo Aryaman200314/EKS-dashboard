@@ -1,11 +1,21 @@
 <!-- Overview Tab -->
 <div id="overview" class="tab-content active">
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        #overview.fade-in {
+            animation: fadeIn 0.2s ease-in-out;
+        }
+    </style>
+
     <div class="widget">
         <div class="widget-header">
             <h2>Cluster Details</h2>
         </div>
         <div class="widget-content">
-            <!-- MODIFICATION: Replaced summary-grid-large with a more structured info-grid -->
             <div class="info-grid">
                 <strong>API server endpoint</strong> <span class="code">{{ cluster.endpoint or 'N/A' }}</span>
                 <strong>Cluster IAM role</strong> <span class="code">{{ cluster.roleArn or 'N/A' }}</span>
@@ -30,13 +40,16 @@
             </div>
         </div>
         <div class="widget">
-             <div class="widget-header"><h2>EKS Auto Mode</h2></div>
-             <div class="widget-content">
+            <div class="widget-header"><h2>EKS Auto Mode</h2></div>
+            <div class="widget-content">
                 <div class="info-grid">
-                    <strong>Status</strong><span class="status-badge status-{{ 'active' if cluster.eks_auto_mode == 'Enabled' else 'disabled' }}">{{ cluster.eks_auto_mode }}</span>
-                    <strong style="grid-column: 1 / -1; margin-top: 1rem; color: var(--text-secondary); font-weight: 400; font-size: .9rem;">EKS automates routine cluster tasks for compute, storage, and networking to meet application compute needs.</strong>
+                    <strong>Status</strong>
+                    <span class="status-badge status-{{ 'active' if cluster.eks_auto_mode == 'Enabled' else 'disabled' }}">{{ cluster.eks_auto_mode }}</span>
+                    <strong style="grid-column: 1 / -1; margin-top: 1rem; color: var(--text-secondary); font-weight: 400; font-size: .9rem;">
+                        EKS automates routine cluster tasks for compute, storage, and networking to meet application compute needs.
+                    </strong>
                 </div>
-             </div>
+            </div>
         </div>
     </div>
 
@@ -47,12 +60,14 @@
             <div class="summary-grid">
                 <div><strong>VPC ID:</strong> <span class="code">{{ cluster.networking.vpcId or 'N/A' }}</span></div>
                 <div><strong>Endpoint Public Access:</strong> 
-                    <span class="status-badge status-{{ 'failed' if cluster.networking.endpointPublicAccess else 'active' }}">
+                    {% set public_color = 'active' if cluster.networking.endpointPublicAccess else 'failed' %}
+                    <span class="status-badge status-{{ public_color }}">
                         {{ 'Enabled' if cluster.networking.endpointPublicAccess else 'Disabled' }}
                     </span>
                 </div>
                 <div><strong>Endpoint Private Access:</strong> 
-                    <span class="status-badge status-{{ 'active' if cluster.networking.endpointPrivateAccess else 'failed' }}">
+                    {% set private_color = 'active' if cluster.networking.endpointPrivateAccess else 'failed' %}
+                    <span class="status-badge status-{{ private_color }}">
                         {{ 'Enabled' if cluster.networking.endpointPrivateAccess else 'Disabled' }}
                     </span>
                 </div>
@@ -79,7 +94,7 @@
             {% endif %}
         </div>
     </div>
-    
+
     {% if cluster.health_issues %}
     <div class="widget">
         <div class="widget-header"><h2><i data-feather="alert-circle" style="color: var(--status-updating);"></i> Health Issues</h2></div>
@@ -95,3 +110,12 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+    window.addEventListener('load', () => {
+        const overviewTab = document.getElementById('overview');
+        if (overviewTab) {
+            overviewTab.classList.add('fade-in');
+        }
+    });
+</script>

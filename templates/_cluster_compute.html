@@ -1,7 +1,7 @@
 <!-- Compute Tab -->
 <div id="compute" class="tab-content">
 
-    <!-- Styles for Node Group filter and count -->
+    <!-- Styles for Node Group filter, count & animation -->
     <style>
     .widget-header {
         display: flex;
@@ -10,7 +10,7 @@
         padding: 1rem 1.25rem;
         border-bottom: 1px solid var(--border-color);
         background-color: var(--surface-color);
-        border-top-left-radius: 8px;
+        border-top-left-radius: 8px;    
         border-top-right-radius: 8px;
     }
 
@@ -48,6 +48,15 @@
         font-size: 0.95rem;
         color: var(--text-muted);
         margin-left: 8px;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .fade-in {
+        animation: fadeIn 0.2s ease-in-out;
     }
     </style>
 
@@ -196,13 +205,11 @@ function updateNodeCount() {
 
     const selectedValue = filter.value;
 
-    // Hide count if "all" is selected
     if (selectedValue === 'all') {
         countWrapper.style.display = 'none';
         return;
     }
 
-    // Show count and calculate
     countWrapper.style.display = 'inline';
     const rows = document.querySelectorAll('#nodes-table tbody tr');
     let visibleCount = 0;
@@ -219,6 +226,12 @@ function runAfterRender(callback) {
 
 window.addEventListener('load', () => {
     runAfterRender(updateNodeCount);
+
+    // Add animation on load
+    const computeTab = document.getElementById('compute');
+    if (computeTab) {
+        computeTab.classList.add('fade-in');
+    }
 });
 
 document.getElementById('nodegroup-filter')?.addEventListener('change', () => {

@@ -1,5 +1,60 @@
-<!-- templates/_cluster_resources.html -->
 <div id="resources" class="tab-content" style="display: none;">
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        #resources.fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .form-input {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+            border: 1px solid #d1d5db; /* gray-300 */
+            border-radius: 0.375rem; /* rounded-md */
+            outline: none;
+            background-color: #ffffff;
+            color: #111827; /* gray-900 */
+            transition: border-color 0.2s, box-shadow 0.2s;
+            min-width: 200px;
+        }
+
+        .form-input:focus {
+            border-color: #3b82f6; /* blue-500 */
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        .form-input::placeholder {
+            color: #9ca3af; /* gray-400 */
+        }
+
+        .resource-filters {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        .input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .with-icon {
+            padding-left: 2rem;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 0.75rem;
+            font-size: 0.875rem;
+            color: #9ca3af;
+            pointer-events: none;
+        }
+    </style>
+
     {% if (cluster.workloads is defined) and not cluster.workloads.error %}
     <div class="resources-container">
         <!-- Left Pane: Resource Types -->
@@ -19,7 +74,7 @@
                         <li><a href="#" class="resource-nav-link" data-resource="priority_class">PriorityClasses</a></li>
                     </ul>
                 </div>
-                 <div class="resource-nav-group">
+                <div class="resource-nav-group">
                     <div class="resource-nav-header">Cluster</div>
                     <ul>
                         <li><a href="#" class="resource-nav-link" data-resource="node">Nodes</a></li>
@@ -27,7 +82,7 @@
                 </div>
                 <div class="resource-nav-group">
                     <div class="resource-nav-header">Service & Networking</div>
-                     <ul>
+                    <ul>
                         <li><a href="#" class="resource-nav-link" data-resource="service">Services</a></li>
                         <li><a href="#" class="resource-nav-link" data-resource="endpoint">Endpoints</a></li>
                         <li><a href="#" class="resource-nav-link" data-resource="ingress">Ingresses</a></li>
@@ -42,7 +97,7 @@
                 </div>
                 <div class="resource-nav-group">
                     <div class="resource-nav-header">Storage</div>
-                     <ul>
+                    <ul>
                         <li><a href="#" class="resource-nav-link" data-resource="persistent_volume_claim">PersistentVolumeClaims</a></li>
                         <li><a href="#" class="resource-nav-link" data-resource="persistent_volume">PersistentVolumes</a></li>
                         <li><a href="#" class="resource-nav-link" data-resource="storage_class">StorageClasses</a></li>
@@ -58,38 +113,56 @@
             <div class="resource-table-header">
                 <h3 id="resource-title">Pods</h3>
                 <div class="resource-filters">
-                    <!-- MODIFICATION: Added node filter -->
                     <select id="resource-node-filter" class="form-select" style="display: none;"></select>
                     <select id="resource-namespace-filter" class="form-select"></select>
-                    <input type="text" id="resource-name-filter" class="form-input" placeholder="Filter by name">
+
+                    <!-- Updated input with icon -->
+                    <div class="input-wrapper">
+                        <input type="text" id="resource-name-filter" class="form-input with-icon" placeholder="Filter by name">
+                        
+                    </div>
                 </div>
             </div>
+
             <div class="table-container">
                 <table class="data-table">
                     <thead id="resource-table-head"></thead>
                     <tbody id="resource-table-body"></tbody>
                 </table>
             </div>
-            <!-- MODIFICATION: Added pagination controls -->
+
+            <!-- Pagination Controls -->
             <div id="pagination-controls" class="pagination-controls" style="display: none;">
-                 <button id="pagination-prev" class="action-btn">Previous</button>
-                 <span id="pagination-info" class="text-muted"></span>
-                 <button id="pagination-next" class="action-btn">Next</button>
+                <button id="pagination-prev" class="action-btn">Previous</button>
+                <span id="pagination-info" class="text-muted"></span>
+                <button id="pagination-next" class="action-btn">Next</button>
             </div>
-             <div id="resource-table-empty" class="no-data-message" style="display: none; padding: 4rem;">
+
+            <div id="resource-table-empty" class="no-data-message" style="display: none; padding: 4rem;">
                 <p>No resources found.</p>
                 <p class="text-muted">This cluster does not have any matching resources for the selected type.</p>
             </div>
         </div>
     </div>
     {% else %}
-        <div class="widget-content">
-             <div class="error-message-box"><strong>Could not load workload data.</strong>
-             <p>Could not connect to the Kubernetes API server or permissions are missing.
+    <div class="widget-content">
+        <div class="error-message-box">
+            <strong>Could not load workload data.</strong>
+            <p>Could not connect to the Kubernetes API server or permissions are missing.
                 {% if cluster.get('workloads', {}).get('error') %}
-                Reason: {{ cluster.workloads.error }}
-            {% endif %}            
-             </p></div>
-         </div>
-     {% endif %}
+                    Reason: {{ cluster.workloads.error }}
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    {% endif %}
 </div>
+
+<script>
+    window.addEventListener('load', () => {
+        const tab = document.getElementById('resources');
+        if (tab) {
+            tab.classList.add('fade-in');
+        }
+    });
+</script>

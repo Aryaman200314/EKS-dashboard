@@ -41,11 +41,10 @@ body {
 
 .app-container {
     display: flex;
-    min-height: 100vh;
-}
+  }
 
 /* --- Sidebar --- */
-.sidebar {
+/* .sidebar {
     width: 260px;
     background-color: var(--surface-color);
     border-right: 1px solid var(--border-color);
@@ -54,8 +53,23 @@ body {
     padding: 1.25rem;
     flex-shrink: 0;
     transition: width 0.3s ease;
-}
+} */
 
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 220px;
+    height: 100vh;
+    background-color: #fff;
+    border-right: 1px solid #e5e7eb;
+    z-index: 1000;
+    overflow-y: auto;
+    padding-top: 2rem;
+padding-left: 1rem;
+  }
+  
+  
 .sidebar-header {
     margin-bottom: 2rem;
     padding: 0 0.5rem;
@@ -94,25 +108,36 @@ body {
 
 /* --- Main Content Area --- */
 .main-content {
-    flex-grow: 1;
-    padding: 2rem 2.5rem;
-    overflow-y: auto;
-    position: relative; /* For info panel positioning */
-}
+    margin-left: 220px;
+    width: calc(100% - 220px);
+    padding: 0 2rem 1.5rem 2rem;
+padding: 0 2rem 1.5rem 2rem;
+    box-sizing: border-box;
+    padding-top: 10px
+  }
 
-.main-header {
+  .main-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-}
-.page-title {
-    font-size: 1.75rem;
+    align-items: center; /* vertically align items */
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    background: white;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 20px;
+   height: 80px; 
+ }
+  
+  .page-title {
+    font-size: 1.5rem;
     font-weight: 600;
     margin: 0;
-}
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
 .page-subtitle {
     margin: 0.25rem 0 2rem 0;
     color: var(--text-secondary);
@@ -423,18 +448,13 @@ body {
 
 /* --- Buttons & General UI --- */
 .action-btn, .action-button {
-    background-color: var(--primary-color);
-    color: white;
-    border: 1px solid var(--primary-color);
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
+    background: transparent;
+    border: none;
     cursor: pointer;
-    display: inline-flex;
+    padding: 0.3rem;
+    display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-weight: 500;
-    font-size: 0.9rem;
-    transition: background-color 0.2s, border-color 0.2s;
+    justify-content: center;
 }
 .action-btn:hover, .action-button:hover {
     background-color: var(--primary-color-dark);
