@@ -43,16 +43,43 @@
     <div class="widget">
         <div class="widget-header"><h2>Networking & Security</h2></div>
         <div class="widget-content">
-             <div class="summary-grid">
+            {% if cluster.networking %}
+            <div class="summary-grid">
                 <div><strong>VPC ID:</strong> <span class="code">{{ cluster.networking.vpcId or 'N/A' }}</span></div>
-                <div><strong>Endpoint Public Access:</strong> <span class="status-badge status-{{ 'failed' if cluster.networking.endpointPublicAccess else 'active' }}">{{ 'Enabled' if cluster.networking.endpointPublicAccess else 'Disabled' }}</span></div>
-                <div><strong>Endpoint Private Access:</strong> <span class="status-badge status-{{ 'active' if cluster.networking.endpointPrivateAccess else 'failed' }}">{{ 'Enabled' if cluster.networking.endpointPrivateAccess else 'Disabled' }}</span></div>
-                <div><strong>Cluster security group:</strong> <span class="code">{{ cluster.networking.clusterSecurityGroupId or 'N/A' }}</span></div>
-                <div><strong>Public access CIDRs:</strong> <span class="code">{{ (cluster.networking.publicAccessCidrs or ['N/A']) | join(', ') }}</span></div>
-                <div style="grid-column: 1 / -1;"><strong>Subnets:</strong> <div class="tags-container" style="margin-top: 5px;">{% for id in cluster.networking.subnetIds %}<span class="tag code">{{ id }}</span>{% else %}<span>N/A</span>{% endfor %}</div></div>
+                <div><strong>Endpoint Public Access:</strong> 
+                    <span class="status-badge status-{{ 'failed' if cluster.networking.endpointPublicAccess else 'active' }}">
+                        {{ 'Enabled' if cluster.networking.endpointPublicAccess else 'Disabled' }}
+                    </span>
+                </div>
+                <div><strong>Endpoint Private Access:</strong> 
+                    <span class="status-badge status-{{ 'active' if cluster.networking.endpointPrivateAccess else 'failed' }}">
+                        {{ 'Enabled' if cluster.networking.endpointPrivateAccess else 'Disabled' }}
+                    </span>
+                </div>
+                <div><strong>Cluster security group:</strong> 
+                    <span class="code">{{ cluster.networking.clusterSecurityGroupId or 'N/A' }}</span>
+                </div>
+                <div><strong>Public access CIDRs:</strong> 
+                    <span class="code">{{ (cluster.networking.publicAccessCidrs or ['N/A']) | join(', ') }}</span>
+                </div>
+                <div style="grid-column: 1 / -1;"><strong>Subnets:</strong> 
+                    <div class="tags-container" style="margin-top: 5px;">
+                        {% for id in cluster.networking.subnetIds %}
+                            <span class="tag code">{{ id }}</span>
+                        {% else %}
+                            <span>N/A</span>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
+            {% else %}
+            <div class="summary-grid">
+                <div><strong>Networking info not available</strong></div>
+            </div>
+            {% endif %}
         </div>
     </div>
+    
     {% if cluster.health_issues %}
     <div class="widget">
         <div class="widget-header"><h2><i data-feather="alert-circle" style="color: var(--status-updating);"></i> Health Issues</h2></div>

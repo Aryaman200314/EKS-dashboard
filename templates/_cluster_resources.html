@@ -86,7 +86,9 @@
         <div class="widget-content">
              <div class="error-message-box"><strong>Could not load workload data.</strong>
              <p>Could not connect to the Kubernetes API server or permissions are missing.
-                {% if cluster.workloads.error %}Reason: {{ cluster.workloads.error }}{% endif %}
+                {% if cluster.get('workloads', {}).get('error') %}
+                Reason: {{ cluster.workloads.error }}
+            {% endif %}            
              </p></div>
          </div>
      {% endif %}
