@@ -7,6 +7,7 @@ import os
 print("Current directory:", os.getcwd())
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from cachetools import TTLCache
 import json
 import logging
@@ -19,6 +20,9 @@ import asyncio
 # Kubernetes imports
 from kubernetes import client, config, watch, stream
 from kubernetes.client.rest import ApiException
+from fastapi import FastAPI, Request
+from api_logger import log_request
+
 
 # Your existing data fetcher functions
 from aws_data_fetcher import (
@@ -35,6 +39,44 @@ print("AWS_TARGET_ACCOUNTS_ROLES =", os.getenv("AWS_TARGET_ACCOUNTS_ROLES"))
 app = FastAPI(title="EKS Operational Dashboard")
 
 # --- Middleware ---
+@app.middleware("http")
+async def log_incoming_requests(request: Request, call_next):
+    method = request.method
+    url = str(request.url)
+    ip = request.client.host
+
+    # Get body size if applicable
+    if method in ("POST", "PUT", "PATCH"):
+        body = await request.body()
+        sent_size = len(body)
+        request._body = body  # reinject body for downstream handlers
+    elif method == "GET":
+        sent_size = len(request.url.query.encode())
+    else:
+        sent_size = 0
+
+    # Get response and measure response size
+    response = await call_next(request)
+    response_body = b""
+    async for chunk in response.body_iterator:
+        response_body += chunk
+    response_size = len(response_body)
+
+    # Create a new response to return (since body_iterator is exhausted)
+    final_response = Response(
+        content=response_body,
+        status_code=response.status_code,
+        headers=dict(response.headers),
+        media_type=response.media_type
+    )
+
+    # Log it
+    log_request(ip, method, url, sent_size, final_response.status_code, response_size)
+
+    return final_response
+
+
+
 class UserStateMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request.state.user = request.session.get("user")
