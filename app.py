@@ -71,7 +71,7 @@ async def log_incoming_requests(request: Request, call_next):
     )
 
     # Log it
-    log_request(ip, method, url, sent_size, final_response.status_code, response_size)
+    log_request(response_size)
 
     return final_response
 

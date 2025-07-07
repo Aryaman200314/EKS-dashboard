@@ -12,11 +12,7 @@ access_handler.setFormatter(logging.Formatter("%(message)s"))
 if not access_logger.hasHandlers():
     access_logger.addHandler(access_handler)
 
-# Logging function
-def log_request(ip: str, method: str, url: str, sent: int, status: int, response_size: int):
-    # Convert to KB and round up small sizes to minimum visible value
-    sent_kb = max(sent / 1024, 0.01)
+# Logging function — only logs response size
+def log_request(response_size: int):
     response_kb = max(response_size / 1024, 0.01)
-    access_logger.info(
-        f"IP: {ip} | Method: {method} | URL: {url} | Sent: {sent_kb:.2f}KB | Status: {status} | Response: {response_kb:.2f}KB"
-    )
+    access_logger.info(f"Response: {response_kb:.2f}KB")
