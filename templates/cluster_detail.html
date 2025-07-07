@@ -78,7 +78,6 @@
             <button class="tab-link active" onclick="openTab(event, 'overview')"><i data-feather="layout"></i>Overview</button>
             <button class="tab-link" onclick="openTab(event, 'compute')"><i data-feather="hard-drive"></i>Compute</button>
             <button class="tab-link" onclick="openTab(event, 'addons')"><i data-feather="box"></i>Add-ons</button>
-            <!-- MODIFICATION: "Workloads" tab removed -->
             <button class="tab-link" onclick="openTab(event, 'resources')"><i data-feather="grid"></i>Resources</button>
             <button class="tab-link" onclick="openTab(event, 'observability')"><i data-feather="bar-chart-2"></i>Observability</button>
             <button class="tab-link" onclick="openTab(event, 'insights')"><i data-feather="zap"></i>Analysis & Insights</button>
@@ -87,7 +86,6 @@
         {% include '_cluster_overview.html' %}
         {% include '_cluster_compute.html' %}
         {% include '_cluster_addons.html' %}
-        <!-- MODIFICATION: "Workloads" include removed -->
         {% include '_cluster_resources.html' %}
         {% include '_cluster_observability.html' %}
         {% include '_cluster_insights.html' %}
@@ -111,10 +109,16 @@
 <script>
     // --- START: GLOBAL SCOPE ---
     const CLUSTER_INFO = { accountId: '{{ cluster.account_id }}', region: '{{ cluster.region }}', name: '{{ cluster.name }}' };
-    const workloadsData = {{ cluster.workloads | tojson | safe if cluster.workloads else 'null' }};
     
     // --- Page State Variables ---
+    let workloadsData = null; // MODIFICATION: Data is now loaded asynchronously.
+    
+    // FIX: Use the 'default' filter to provide a fallback value *before* tojson is called.
+    // This makes the template more resilient and prevents the "Undefined" error.
+    const initialWorkloadsError = {{ cluster.workloads_error | default(none) | tojson | safe }};
+
     let resourcesTabInitialized = false;
+    let resourcesDataLoading = false; // Flag to prevent multiple concurrent fetches
     let activeTab = 'overview';
     let metricCharts = {};
     let metricsLoaded = false;
@@ -133,16 +137,71 @@
         document.getElementById(tabName).style.display = 'block';
         evt.currentTarget.classList.add('active');
 
-        // MODIFICATION: Removed logic for 'workloads' tab
+        // MODIFICATION: Logic to lazy-load heavy data for the resources tab.
         if (tabName === 'resources' && !resourcesTabInitialized) {
-            initializeResourcesTab();
-            resourcesTabInitialized = true;
+            loadAndInitializeResourcesTab();
         } else if (tabName === 'observability' && !metricsLoaded) {
             loadMetrics();
         }
         feather.replace();
     }
     
+    // --- START: ASYNC DATA LOADING FOR RESOURCES ---
+    async function loadAndInitializeResourcesTab() {
+        if (resourcesTabInitialized || resourcesDataLoading) {
+            return; // Don't run if already initialized or currently loading
+        }
+        resourcesDataLoading = true;
+
+        const loadingState = document.getElementById('resources-loading-state');
+        const errorState = document.getElementById('resources-error-state');
+        const container = document.getElementById('resources-container');
+        const errorReasonEl = document.getElementById('resources-error-reason');
+
+        // Hide all states first
+        loadingState.style.display = 'none';
+        errorState.style.display = 'none';
+        container.style.display = 'none';
+
+        // Check if an error was already present from the initial page load
+        if (initialWorkloadsError) {
+            errorReasonEl.textContent = `Reason: ${initialWorkloadsError}`;
+            errorState.style.display = 'flex';
+            resourcesTabInitialized = true; // Mark as "initialized" to an error state
+            resourcesDataLoading = false;
+            return;
+        }
+
+        loadingState.style.display = 'flex';
+
+        try {
+            const apiUrl = `/api/workloads/${CLUSTER_INFO.accountId}/${CLUSTER_INFO.region}/${CLUSTER_INFO.name}`;
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+
+            if (!response.ok || (data && data.error)) {
+                throw new Error(data.error || `Failed to fetch workload data (status: ${response.status})`);
+            }
+
+            workloadsData = data; // Assign to global variable
+            
+            loadingState.style.display = 'none';
+            container.style.display = 'flex'; // Use flex because it's a flex container
+            
+            initializeResourcesTab(); // Now call the original setup function
+            resourcesTabInitialized = true; // Mark as fully initialized
+
+        } catch (error) {
+            console.error("Failed to load workloads:", error);
+            errorReasonEl.textContent = `Reason: ${error.message}`;
+            errorState.style.display = 'flex';
+            loadingState.style.display = 'none';
+        } finally {
+            resourcesDataLoading = false; // Reset loading flag
+        }
+    }
+
+
     // --- START: RESOURCES TAB LOGIC ---
     const resourceDefinitions = {
         pod: {

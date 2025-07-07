@@ -1,4 +1,3 @@
-
 import os
 import uvicorn
 import logging
@@ -170,6 +169,21 @@ async def get_metrics_api(account_id: str, region: str, cluster_name: str):
     role_arn = get_role_arn_for_account(account_id)
     metrics = get_cluster_metrics(account_id, region, cluster_name, role_arn)
     return JSONResponse(content=metrics, status_code=500 if "error" in metrics else 200)
+
+@app.get("/api/workloads/{account_id}/{region}/{cluster_name}", response_class=JSONResponse)
+def get_workloads_api(account_id: str, region: str, cluster_name: str, db: Session = Depends(database.get_db)):
+    """
+    API endpoint to asynchronously fetch the large workloads JSON object.
+    """
+    workloads_data = db.query(database.Cluster.workloads).filter(
+        database.Cluster.account_id == account_id,
+        database.Cluster.region == region,
+        database.Cluster.name == cluster_name
+    ).scalar()
+
+    if workloads_data:
+        return JSONResponse(content=workloads_data)
+    return JSONResponse(content={"error": "Workloads not found for this cluster."}, status_code=404)
 
 # WebSockets
 @app.websocket("/ws/logs/{account_id}/{region}/{cluster_name}/{namespace}/{pod_name}")

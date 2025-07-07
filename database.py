@@ -137,7 +137,6 @@ def update_cluster_data(session: Session, cluster_data: dict):
 
     # Efficiently update sub-resources
     _update_sub_resources(session, cluster, 'nodegroups', 'name', cluster_data.get('nodegroups_data', []))
-    # FIX: The `key_field` for the Addon ORM model is 'name', not 'addonName'.
     _update_sub_resources(session, cluster, 'addons', 'name', cluster_data.get('addons', []), lambda d: {'name': d.get('addonName'), **d})
     _update_sub_resources(session, cluster, 'fargate_profiles', 'name', cluster_data.get('fargate_profiles', []))
 
@@ -147,7 +146,6 @@ def update_cluster_data(session: Session, cluster_data: dict):
 
 def _update_sub_resources(session: Session, parent_cluster: Cluster, relationship_name: str, key_field: str, incoming_data: list, data_transformer=None):
     existing_items = getattr(parent_cluster, relationship_name)
-    # The key in the incoming data might be different (e.g., 'addonName' vs 'name')
     incoming_key_field = 'name' if relationship_name != 'addons' else 'addonName'
     
     existing_map = {getattr(item, key_field): item for item in existing_items}
@@ -160,22 +158,16 @@ def _update_sub_resources(session: Session, parent_cluster: Cluster, relationshi
             
     # Add or Update items
     for key, data in incoming_map.items():
-        # The correct way to get the related class
         orm_class = getattr(Cluster, relationship_name).property.mapper.class_
-        
-        # Transform data if a transformer function is provided (for addons)
         if data_transformer:
             data = data_transformer(data)
 
         if key in existing_map:
-            # Update existing item
             item = existing_map[key]
             for field, value in data.items():
                 if hasattr(item, field):
                     setattr(item, field, value)
         else:
-            # Add new item
-            # Remove fields that don't exist in the ORM model
             valid_fields = {c.name for c in orm_class.__table__.columns}
             filtered_data = {k: v for k, v in data.items() if k in valid_fields}
             
@@ -195,12 +187,25 @@ def get_cluster_details(session: Session, account_id: str, region: str, cluster_
     cluster = session.query(Cluster).options(
         joinedload(Cluster.nodegroups), joinedload(Cluster.addons), joinedload(Cluster.fargate_profiles)
     ).filter(Cluster.account_id == account_id, Cluster.region == region, Cluster.name == cluster_name).first()
+
     if not cluster: return None
-    cluster_dict = {key: getattr(cluster, key) for key in cluster.__table__.columns.keys()}
+
+    # Exclude the 'workloads' field from the initial dictionary.
+    cluster_dict = {key: getattr(cluster, key) for key in cluster.__table__.columns.keys() if key != 'workloads'}
+    
     cluster_dict['createdAt'] = cluster.created_at
     cluster_dict['certificateAuthority'] = {'data': cluster.certificate_authority_data}
     cluster_dict['nodegroups_data'] = [vars(ng) for ng in cluster.nodegroups]
     cluster_dict['addons'] = [{'addonName': a.name, 'addonVersion': a.version, 'status': a.status,
                               'pod_identity_display': a.pod_identity_display, 'irsa_role_arn': a.irsa_role_arn} for a in cluster.addons]
     cluster_dict['fargate_profiles'] = [{'name': f.name, 'status': f.status} for f in cluster.fargate_profiles]
+    
+    # FIX: Always define the 'workloads_error' key.
+    # Set it to the error message if one exists, otherwise set it to None.
+    # This prevents the Jinja 'Undefined' error.
+    if cluster.workloads and cluster.workloads.get('error'):
+        cluster_dict['workloads_error'] = cluster.workloads.get('error')
+    else:
+        cluster_dict['workloads_error'] = None
+
     return cluster_dict

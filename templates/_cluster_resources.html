@@ -55,8 +55,17 @@
         }
     </style>
 
-    {% if (cluster.workloads is defined) and not cluster.workloads.error %}
-    <div class="resources-container">
+    <!-- NEW: Loading and Error placeholders -->
+    <div id="resources-loading-state" class="no-data-message" style="display: none;">
+        <p>Loading Kubernetes resources...</p>
+    </div>
+    <div id="resources-error-state" class="no-data-message" style="display: none;">
+        <strong>Could not load workload data.</strong>
+        <p id="resources-error-reason"></p>
+    </div>
+
+    <!-- The actual content, initially hidden, shown by JS after data loads -->
+    <div id="resources-container" class="resources-container" style="display:none;">
         <!-- Left Pane: Resource Types -->
         <div class="resource-types-pane">
             <nav class="resource-nav">
@@ -144,18 +153,6 @@
             </div>
         </div>
     </div>
-    {% else %}
-    <div class="widget-content">
-        <div class="error-message-box">
-            <strong>Could not load workload data.</strong>
-            <p>Could not connect to the Kubernetes API server or permissions are missing.
-                {% if cluster.get('workloads', {}).get('error') %}
-                    Reason: {{ cluster.workloads.error }}
-                {% endif %}
-            </p>
-        </div>
-    </div>
-    {% endif %}
 </div>
 
 <script>
