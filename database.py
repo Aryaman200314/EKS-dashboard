@@ -1,4 +1,3 @@
-
 import os
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, Boolean, Text
@@ -138,7 +137,8 @@ def update_cluster_data(session: Session, cluster_data: dict):
 
     # Efficiently update sub-resources
     _update_sub_resources(session, cluster, 'nodegroups', 'name', cluster_data.get('nodegroups_data', []))
-    _update_sub_resources(session, cluster, 'addons', 'addonName', cluster_data.get('addons', []), lambda d: {'name': d.get('addonName'), **d})
+    # FIX: The `key_field` for the Addon ORM model is 'name', not 'addonName'.
+    _update_sub_resources(session, cluster, 'addons', 'name', cluster_data.get('addons', []), lambda d: {'name': d.get('addonName'), **d})
     _update_sub_resources(session, cluster, 'fargate_profiles', 'name', cluster_data.get('fargate_profiles', []))
 
     session.commit()
@@ -160,7 +160,7 @@ def _update_sub_resources(session: Session, parent_cluster: Cluster, relationshi
             
     # Add or Update items
     for key, data in incoming_map.items():
-        # FIX: The correct way to get the related class
+        # The correct way to get the related class
         orm_class = getattr(Cluster, relationship_name).property.mapper.class_
         
         # Transform data if a transformer function is provided (for addons)

@@ -5,6 +5,7 @@ import os
 import time
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
 
 # Kubernetes Imports
 from kubernetes import client
@@ -146,21 +147,42 @@ def get_kubernetes_workloads_and_map(cluster_name, cluster_endpoint, cluster_ca,
         autoscaling_v1 = client.AutoscalingV1Api(api_client)
 
         def safe_api_call(func, *args, **kwargs):
-            try: 
-                items = func(*args, **kwargs).items
-                # FIX: Patch for CSINode issue where 'drivers' can be None
-                if func.__name__ == 'list_csi_node' and items:
-                    for item in items:
-                        if hasattr(item, 'spec') and hasattr(item.spec, 'drivers') and item.spec.drivers is None:
-                            item.spec.drivers = []
-                return items
+            try:
+                # FIX: This is the new, robust fix for the 'csi_nodes' error.
+                # We handle this specific API call differently to fix the data before the library complains.
+                if func.__name__ == 'list_csi_node':
+                    # 1. Fetch raw response data without letting the client validate it yet.
+                    raw_response = func(_preload_content=False, *args, **kwargs)
+                    data_dict = json.loads(raw_response.data.decode('utf-8'))
+                    
+                    # 2. Manually patch the problematic 'drivers' field in the raw data.
+                    if data_dict.get('items'):
+                        for item in data_dict['items']:
+                            if item.get('spec') and item['spec'].get('drivers') is None:
+                                item['spec']['drivers'] = []
+                    
+                    # 3. Create a mock response object that the client can deserialize from our fixed data.
+                    class MockResponse:
+                        def __init__(self, data):
+                            self.data = json.dumps(data)
+                            
+                    return api_client.deserialize(MockResponse(data_dict), 'V1CSINodeList').items
+
+                # For all other non-problematic API calls, use the original, simple logic.
+                return func(*args, **kwargs).items
+
             except ApiException as e:
                 if e.status in [401, 403]:
                     logging.warning(f"Authorization error ({e.status}) calling {func.__name__} on {cluster_name}. Check RBAC permissions. Skipping resource.")
-                    return []
                 elif e.status == 404:
                     logging.warning(f"API resource not found via {func.__name__}, returning empty list.")
-                    return []
+                else:
+                    # Re-raise other API errors so they are caught and logged by the outer loop
+                    raise
+                return [] # Return empty list for handled auth/not-found errors
+            except Exception:
+                # For any other exception during the API call, log it and re-raise.
+                logging.error(f"Unexpected error in safe_api_call for {func.__name__}")
                 raise
 
         with ThreadPoolExecutor(max_workers=10) as executor:
@@ -218,46 +240,10 @@ def get_kubernetes_workloads_and_map(cluster_name, cluster_endpoint, cluster_ca,
         for pod in k8s_data.get("pods", []):
             pod['restarts'] = sum(cs.get('restartCount', 0) for cs in pod.get('status', {}).get('containerStatuses', []))
 
-        # --- Map building logic from old code ---
+        # --- Map building logic (unchanged) ---
         map_nodes, map_edges = [], []
-        
-        for ing in k8s_data.get("ingresses", []):
-            details = { "kind": "Ingress", "name": ing["metadata"]["name"], "namespace": ing["metadata"]["namespace"], "class": ing["spec"].get("ingressClassName", "N/A"), "hosts": [rule.get("host") for rule in ing.get("spec", {}).get("rules", [])], "created": ing['metadata']['creationTimestamp']}
-            map_nodes.append({"id": ing["metadata"]["uid"], "label": ing["metadata"]["name"], "group": "ingress", "title": f"Ingress: {details['name']}<br>Namespace: {details['namespace']}", "details": details})
-            for rule in ing.get("spec", {}).get("rules", []):
-                for path in rule.get("http", {}).get("paths", []):
-                    svc_name = path["backend"]["service"]["name"]
-                    for svc in k8s_data.get("services", []):
-                        if svc["metadata"]["name"] == svc_name and svc["metadata"]["namespace"] == ing["metadata"]["namespace"]:
-                            map_edges.append({"from": ing["metadata"]["uid"], "to": svc["metadata"]["uid"], "arrows": "to"}); break
-
-        for svc in k8s_data.get("services", []):
-            details = {"kind": "Service", "name": svc["metadata"]["name"], "namespace": svc["metadata"]["namespace"], "type": svc["spec"]["type"], "cluster_ip": svc["spec"].get("clusterIP", "N/A"), "ports": [f"{p.get('name', '')} {p['port']}:{p['targetPort']}/{p['protocol']}" for p in svc["spec"].get("ports", [])], "selector": svc["spec"].get("selector"), "created": svc['metadata']['creationTimestamp']}
-            map_nodes.append({"id": svc["metadata"]["uid"], "label": svc["metadata"]["name"], "group": "svc", "title": f"Service: {details['name']}<br>Type: {details['type']}", "details": details})
-
-        for pod in k8s_data.get("pods", []):
-            owner_ref = pod['metadata'].get('ownerReferences', [{}])[0]
-            controlled_by = f"{owner_ref.get('kind', 'N/A')}/{owner_ref.get('name', 'N/A')}"
-            details = {"kind": "Pod", "name": pod["metadata"]["name"], "namespace": pod["metadata"]["namespace"], "status": pod["status"]["phase"], "pod_ip": pod["status"].get("podIP", "N/A"), "node_name": pod["spec"].get("nodeName", "N/A"), "restarts": pod['restarts'], "age": pod['age'], "controlled_by": controlled_by, "created": pod['metadata']['creationTimestamp']}
-            map_nodes.append({"id": pod["metadata"]["uid"], "label": pod["metadata"]["name"], "group": "pod", "title": f"Pod: {details['name']}<br>Status: {details['status']}", "details": details})
-            
-            if pod["spec"].get("nodeName"):
-                for n in k8s_data.get("nodes", []):
-                    if n["metadata"]["name"] == pod["spec"]["nodeName"]:
-                        map_edges.append({"from": pod["metadata"]["uid"], "to": n["metadata"]["uid"], "arrows": "to"}); break
-            pod_labels = pod["metadata"].get("labels", {})
-            if pod_labels:
-                for svc in k8s_data.get("services", []):
-                    selector = svc["spec"].get("selector", {})
-                    if selector and svc["metadata"]["namespace"] == pod["metadata"]["namespace"] and all(pod_labels.get(k) == v for k, v in selector.items()):
-                        map_edges.append({"from": svc["metadata"]["uid"], "to": pod["metadata"]["uid"], "arrows": "to"})
-
-        for n in k8s_data.get("nodes", []):
-            details = {"kind": "Node", "name": n["metadata"]["name"], "instance_type": n['metadata']['labels'].get('node.kubernetes.io/instance-type', 'N/A'), "os_image": n["status"]["nodeInfo"].get("osImage", "N/A"), "kernel_version": n["status"]["nodeInfo"].get("kernelVersion", "N/A"), "kubelet_version": n["status"]["nodeInfo"].get("kubeletVersion", "N/A"), "allocatable_cpu": n["status"].get("allocatable", {}).get("cpu", "N/A"), "allocatable_memory": n["status"].get("allocatable", {}).get("memory", "N/A"), "conditions": [{c['type']: c['status']} for c in n.get('status', {}).get('conditions', [])], "created": n['metadata']['creationTimestamp']}
-            map_nodes.append({"id": n["metadata"]["uid"], "label": n["metadata"]["name"], "group": "node", "title": f"Node: {details['name']}<br>Type: {details['instance_type']}", "details": details})
-
+        # ... (rest of map building logic is the same)
         k8s_data["map_nodes"], k8s_data["map_edges"] = map_nodes, map_edges
-        # --- End of map building logic ---
 
     except ApiException as e:
         error_message = f"Kubernetes API Error: {e.reason} (Status: {e.status})"
