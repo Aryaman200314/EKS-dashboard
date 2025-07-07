@@ -14,7 +14,6 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <a href="{{ url_for('read_dashboard') }}">
-                    <!-- Using the provided CloudKeeper logo URL -->
                     <img src="https://static.cloudonomic.com/app-logo/CK%20PRO/logo" alt="CloudKeeper Logo" class="logo">
                 </a>
             </div>
@@ -38,11 +37,12 @@
                     <button id="refresh-data-btn" class="action-btn" title="Refresh All Data">
                      <i data-feather="refresh-cw"></i>
                     </button>
+                    <!-- User menu is now conditional -->
                     {% if request.state.user %}
                     <div class="user-menu">
                          <div class="user-info">
                             <div class="welcome">Welcome, {% set email = request.state.user.email %}{{ email.split('@')[0] }}</div>
-                            <a href="{{ url_for('saml_logout') }}" class="logout-link">Logout</a>
+                            <a href="#" class="logout-link">Logout</a>
                          </div>
                          <div class="user-avatar">
                             {{ request.state.user.email[0] | upper }}
@@ -70,32 +70,34 @@
                     
                     try {
                         const response = await fetch('/api/refresh-data', { method: 'POST' });
-                        if (response.ok) {
-                            window.location.reload();
-                        } else {
-                            alert('Failed to refresh data. Please try again.');
+                        const result = await response.json();
+                        alert(result.message);
+                        if (response.status === 409) {
+                           // Do nothing, alert shows message
+                        } else if (response.ok) {
+                           setTimeout(() => window.location.reload(), 2000);
                         }
                     } catch (error) {
                         console.error('Refresh error:', error);
                         alert('An error occurred while refreshing data.');
                     } finally {
-                        // This might not run if page reloads, but good practice
                         if (icon) icon.classList.remove('spin');
                         btn.disabled = false;
                     }
                 });
             }
 
-            // --- Last Refreshed Time ---
-            const lastRefreshedTime = new Date("{{ request.state.now.isoformat() if request.state.now else '' }}");
+            const lastRefreshedTimeIso = "{{ request.state.last_update_time.isoformat() if request.state.last_update_time else '' }}";
             const lastRefreshedSpan = document.getElementById('last-refreshed-time');
-            if (lastRefreshedSpan && lastRefreshedTime.valueOf()) {
-                // MODIFICATION: Changed "Data as of:" to "Last Updated:"
+
+            if (lastRefreshedSpan && lastRefreshedTimeIso) {
+                const lastRefreshedTime = new Date(lastRefreshedTimeIso + 'Z');
                 lastRefreshedSpan.textContent = `Last Updated: ${lastRefreshedTime.toLocaleTimeString()}`;
                 lastRefreshedSpan.title = `Data loaded at ${lastRefreshedTime.toISOString()}`;
+            } else if (lastRefreshedSpan) {
+                lastRefreshedSpan.textContent = `Last Updated: Syncing...`;
             }
 
-            // --- Sidebar Active State ---
             const currentPath = window.location.pathname;
             const navLinks = document.querySelectorAll('.sidebar-nav .nav-item');
             let activeLinkFound = false;

@@ -44,7 +44,7 @@
         .resource-table-header { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
         .resource-table-header h3 { margin: 0; }
         .resource-filters { display: flex; gap: 1rem; align-items: center; }
-        .resource-details-pane .table-container { flex: 1; overflow-y: auto; border: none; }
+        .resource-details-pane .table-container { flex:d 1; overflow-y: auto; border: none; }
         .resource-details-pane .data-table { width: 100%; }
         #resource-table-body tr { cursor: pointer; }
         #resource-table-body tr:hover { background-color: var(--bg-color); }
@@ -64,7 +64,7 @@
 {% endblock %}
 
 {% block content %}
-    <a href="{{ url_for('list_clusters') }}" class="back-link"><i data-feather="arrow-left"></i> Back to Clusters</a>
+    <a href="{{ url_for('list_clusters') }}" class="back-link"><iLast data-feather="arrow-left"></iLast> Back to Clusters</a>
     <h2 class="cluster-detail-title">{{ cluster.name or "Unknown Cluster" }}</h2>
 
     {% if cluster.errors %}

@@ -23,6 +23,14 @@ COST_TAG_KEY = os.getenv("COST_TAG_KEY", "eks:cluster-name")
 
 # --- Utility & Session Management ---
 
+def get_role_arn_for_account(account_id: str) -> str | None:
+    """Finds the corresponding role ARN for a given account ID from an environment variable."""
+    target_roles_str = os.getenv("AWS_TARGET_ACCOUNTS_ROLES", "")
+    for r_arn in target_roles_str.split(','):
+        if f":{account_id}:" in r_arn:
+            return r_arn.strip()
+    return None
+
 def get_session(role_arn=None):
     """Gets a boto3 session, assuming a role if one is provided."""
     if not role_arn:
@@ -115,7 +123,7 @@ def fetch_karpenter_nodes_for_cluster(core_v1_api):
     return karpenter_nodes
 
 def get_kubernetes_workloads_and_map(cluster_name, cluster_endpoint, cluster_ca, region, role_arn=None):
-    """Fetches detailed workload info using the kubernetes-python client for reliability."""
+    """Fetches detailed workload info and builds a resource map using the kubernetes-python client."""
     logging.info(f"Fetching full Kubernetes object map for {cluster_name}...")
     k8s_data = {
         "pods": [], "services": [], "ingresses": [], "nodes": [], "deployments": [],
@@ -140,15 +148,17 @@ def get_kubernetes_workloads_and_map(cluster_name, cluster_endpoint, cluster_ca,
         def safe_api_call(func, *args, **kwargs):
             try: 
                 items = func(*args, **kwargs).items
-        # Patch for CSI driver issue:
-                if hasattr(items, "__iter__"):
+                # FIX: Patch for CSINode issue where 'drivers' can be None
+                if func.__name__ == 'list_csi_node' and items:
                     for item in items:
-                # Defensive: V1CSINodeSpec.drivers must not be None
-                        if hasattr(item, 'spec') and hasattr(item.spec, 'drivers') and item.spec.drivers is  not None:
+                        if hasattr(item, 'spec') and hasattr(item.spec, 'drivers') and item.spec.drivers is None:
                             item.spec.drivers = []
                 return items
             except ApiException as e:
-                if e.status == 404:
+                if e.status in [401, 403]:
+                    logging.warning(f"Authorization error ({e.status}) calling {func.__name__} on {cluster_name}. Check RBAC permissions. Skipping resource.")
+                    return []
+                elif e.status == 404:
                     logging.warning(f"API resource not found via {func.__name__}, returning empty list.")
                     return []
                 raise
@@ -178,8 +188,16 @@ def get_kubernetes_workloads_and_map(cluster_name, cluster_endpoint, cluster_ca,
             }
             for future in as_completed(future_map):
                 key = future_map[future]
-                try: k8s_data[key] = [api_client.sanitize_for_serialization(item) for item in future.result()]
-                except Exception as e: logging.error(f"Error processing future for {key}: {e}", exc_info=True)
+                try:
+                    result_items = future.result()
+                    if result_items:
+                        k8s_data[key] = [api_client.sanitize_for_serialization(item) for item in result_items]
+                except Exception as e:
+                    logging.error(f"Error processing future for {key}: {e}", exc_info=False)
+                    k8s_data['error'] = f"Failed to fetch {key}: {e}"
+        
+        if any(f.exception() for f in future_map if isinstance(f.exception(), ApiException) and f.exception().status in [401, 403]):
+             k8s_data['error'] = "Authorization error accessing Kubernetes API. Check that the IAM role has correct RBAC permissions in the cluster."
         
         now = datetime.now(timezone.utc)
         for key in k8s_data:
@@ -197,48 +215,49 @@ def get_kubernetes_workloads_and_map(cluster_name, cluster_endpoint, cluster_ca,
                         except (ValueError, TypeError):
                             item['age'] = 'N/A'
         
-        # Map building
-        map_nodes, map_edges = [], []
-        
         for pod in k8s_data.get("pods", []):
             pod['restarts'] = sum(cs.get('restartCount', 0) for cs in pod.get('status', {}).get('containerStatuses', []))
 
-        for ing in k8s_data["ingresses"]:
+        # --- Map building logic from old code ---
+        map_nodes, map_edges = [], []
+        
+        for ing in k8s_data.get("ingresses", []):
             details = { "kind": "Ingress", "name": ing["metadata"]["name"], "namespace": ing["metadata"]["namespace"], "class": ing["spec"].get("ingressClassName", "N/A"), "hosts": [rule.get("host") for rule in ing.get("spec", {}).get("rules", [])], "created": ing['metadata']['creationTimestamp']}
             map_nodes.append({"id": ing["metadata"]["uid"], "label": ing["metadata"]["name"], "group": "ingress", "title": f"Ingress: {details['name']}<br>Namespace: {details['namespace']}", "details": details})
             for rule in ing.get("spec", {}).get("rules", []):
                 for path in rule.get("http", {}).get("paths", []):
                     svc_name = path["backend"]["service"]["name"]
-                    for svc in k8s_data["services"]:
+                    for svc in k8s_data.get("services", []):
                         if svc["metadata"]["name"] == svc_name and svc["metadata"]["namespace"] == ing["metadata"]["namespace"]:
                             map_edges.append({"from": ing["metadata"]["uid"], "to": svc["metadata"]["uid"], "arrows": "to"}); break
 
-        for svc in k8s_data["services"]:
+        for svc in k8s_data.get("services", []):
             details = {"kind": "Service", "name": svc["metadata"]["name"], "namespace": svc["metadata"]["namespace"], "type": svc["spec"]["type"], "cluster_ip": svc["spec"].get("clusterIP", "N/A"), "ports": [f"{p.get('name', '')} {p['port']}:{p['targetPort']}/{p['protocol']}" for p in svc["spec"].get("ports", [])], "selector": svc["spec"].get("selector"), "created": svc['metadata']['creationTimestamp']}
             map_nodes.append({"id": svc["metadata"]["uid"], "label": svc["metadata"]["name"], "group": "svc", "title": f"Service: {details['name']}<br>Type: {details['type']}", "details": details})
 
-        for pod in k8s_data["pods"]:
+        for pod in k8s_data.get("pods", []):
             owner_ref = pod['metadata'].get('ownerReferences', [{}])[0]
             controlled_by = f"{owner_ref.get('kind', 'N/A')}/{owner_ref.get('name', 'N/A')}"
             details = {"kind": "Pod", "name": pod["metadata"]["name"], "namespace": pod["metadata"]["namespace"], "status": pod["status"]["phase"], "pod_ip": pod["status"].get("podIP", "N/A"), "node_name": pod["spec"].get("nodeName", "N/A"), "restarts": pod['restarts'], "age": pod['age'], "controlled_by": controlled_by, "created": pod['metadata']['creationTimestamp']}
             map_nodes.append({"id": pod["metadata"]["uid"], "label": pod["metadata"]["name"], "group": "pod", "title": f"Pod: {details['name']}<br>Status: {details['status']}", "details": details})
             
             if pod["spec"].get("nodeName"):
-                for n in k8s_data["nodes"]:
+                for n in k8s_data.get("nodes", []):
                     if n["metadata"]["name"] == pod["spec"]["nodeName"]:
                         map_edges.append({"from": pod["metadata"]["uid"], "to": n["metadata"]["uid"], "arrows": "to"}); break
             pod_labels = pod["metadata"].get("labels", {})
             if pod_labels:
-                for svc in k8s_data["services"]:
+                for svc in k8s_data.get("services", []):
                     selector = svc["spec"].get("selector", {})
                     if selector and svc["metadata"]["namespace"] == pod["metadata"]["namespace"] and all(pod_labels.get(k) == v for k, v in selector.items()):
                         map_edges.append({"from": svc["metadata"]["uid"], "to": pod["metadata"]["uid"], "arrows": "to"})
 
-        for n in k8s_data["nodes"]:
+        for n in k8s_data.get("nodes", []):
             details = {"kind": "Node", "name": n["metadata"]["name"], "instance_type": n['metadata']['labels'].get('node.kubernetes.io/instance-type', 'N/A'), "os_image": n["status"]["nodeInfo"].get("osImage", "N/A"), "kernel_version": n["status"]["nodeInfo"].get("kernelVersion", "N/A"), "kubelet_version": n["status"]["nodeInfo"].get("kubeletVersion", "N/A"), "allocatable_cpu": n["status"].get("allocatable", {}).get("cpu", "N/A"), "allocatable_memory": n["status"].get("allocatable", {}).get("memory", "N/A"), "conditions": [{c['type']: c['status']} for c in n.get('status', {}).get('conditions', [])], "created": n['metadata']['creationTimestamp']}
             map_nodes.append({"id": n["metadata"]["uid"], "label": n["metadata"]["name"], "group": "node", "title": f"Node: {details['name']}<br>Type: {details['instance_type']}", "details": details})
 
         k8s_data["map_nodes"], k8s_data["map_edges"] = map_nodes, map_edges
+        # --- End of map building logic ---
 
     except ApiException as e:
         error_message = f"Kubernetes API Error: {e.reason} (Status: {e.status})"
@@ -298,7 +317,6 @@ def fetch_fargate_profiles_for_cluster(eks_client, cluster_name):
 def fetch_oidc_provider_for_cluster(cluster_raw):
     return cluster_raw.get('identity', {}).get('oidc', {}).get('issuer')
 
-# --- Action Functions ---
 def upgrade_nodegroup_version(account_id, region, cluster_name, nodegroup_name, role_arn=None):
     session = get_session(role_arn)
     if not session: return {"error": f"Failed to get session for account {account_id}."}
@@ -309,7 +327,6 @@ def upgrade_nodegroup_version(account_id, region, cluster_name, nodegroup_name, 
     except ClientError as e:
         return {"error": e.response['Error']['Message']}
 
-# --- Metrics Fetcher ---
 def get_cluster_metrics(account_id, region, cluster_name, role_arn=None):
     session = get_session(role_arn)
     if not session:
@@ -357,13 +374,7 @@ def get_cluster_metrics(account_id, region, cluster_name, role_arn=None):
         "apiserver_storage_objects": ('apiserver_storage_objects', 'Average'),
         "apiserver_storage_size_bytes": ('apiserver_storage_size_bytes', 'Average'),
     }
-
-    queries = [{
-        'Id': f'm{i}', 'Label': key,
-        'MetricStat': { 'Metric': {'Namespace': 'ContainerInsights', 'MetricName': name, 'Dimensions': [{'Name': 'ClusterName', 'Value': cluster_name}]}, 'Period': 300, 'Stat': stat},
-        'ReturnData': True
-    } for i, (key, (name, stat)) in enumerate(metric_definitions.items())]
-
+    queries = [{'Id': f'm{i}', 'Label': key, 'MetricStat': { 'Metric': {'Namespace': 'ContainerInsights', 'MetricName': name, 'Dimensions': [{'Name': 'ClusterName', 'Value': cluster_name}]}, 'Period': 300, 'Stat': stat},'ReturnData': True} for i, (key, (name, stat)) in enumerate(metric_definitions.items())]
     try:
         response = cw_client.get_metric_data(
             MetricDataQueries=queries,
@@ -373,18 +384,15 @@ def get_cluster_metrics(account_id, region, cluster_name, role_arn=None):
         return {res['Label']: {'timestamps': [ts.isoformat() for ts in res['Timestamps']], 'values': res['Values']} for res in response['MetricDataResults']}
     except ClientError as e:
         logging.error(f"Could not fetch metrics for {cluster_name}. Ensure Container Insights is enabled. Error: {e}")
-        return {'error': f"Could not fetch metrics. Ensure Container Insights and Control Plane metrics are enabled. Error: {e.response['Error']['Message']}"}
+        return {'error': f"Could not fetch metrics. Error: {e.response['Error']['Message']}"}
     except Exception as e:
         logging.error(f"An unexpected error occurred fetching metrics for {cluster_name}: {e}")
         return {'error': f'An unexpected error occurred fetching metrics: {str(e)}'}
 
-# --- Security Insights ---
 def get_security_insights(cluster_raw, eks_client):
     insights = {}
     insights['secrets_encrypted'] = {"status": any(cfg.get('provider', {}).get('keyArn') for cfg in cluster_raw.get('encryptionConfig', [])), "description": "Checks if envelope encryption for Kubernetes secrets is enabled with a KMS key."}
     insights['public_endpoint'] = {"status": not cluster_raw.get('resourcesVpcConfig', {}).get('endpointPublicAccess', False), "description": "Checks if the cluster's API server endpoint is private (best practice)."}
-    all_logs = ['api', 'audit', 'authenticator', 'controllerManager', 'scheduler']
-    enabled_logs = cluster_raw.get('logging', {}).get('clusterLogging', [{}])[0].get('types', [])
     all_logs = ['api', 'audit', 'authenticator', 'controllerManager', 'scheduler']
     enabled_logs = cluster_raw.get('logging', {}).get('clusterLogging', [{}])[0].get('types', [])
     insights['logging_enabled'] = {
@@ -394,12 +402,7 @@ def get_security_insights(cluster_raw, eks_client):
         "missing_logs": [lt for lt in all_logs if lt not in enabled_logs],
         "description": "Checks if all control plane log types are enabled."
     }
-    insights['latest_platform_version'] = {
-        "status": False,
-        "current": "N/A",
-        "latest": "N/A",
-        "description": "Checks if the cluster is running the latest EKS platform version."
-    }
+    insights['latest_platform_version'] = {"status": False, "current": "N/A", "latest": "N/A", "description": "Checks if the cluster is running the latest EKS platform version."}
     try:
         eks_client.describe_update(name=cluster_raw['name'], updateId='dummy-id-for-platform-version')
     except ClientError as e:
@@ -408,8 +411,6 @@ def get_security_insights(cluster_raw, eks_client):
             insights['latest_platform_version'].update({"status": latest_pv == current_pv, "current": current_pv, "latest": latest_pv})
     return insights
 
-# --- Main Data Aggregation Functions ---
-
 def _process_cluster_data(c_raw, with_details=False, detail_results=None):
     now = datetime.now(timezone.utc)
     ninety_days_from_now = now + timedelta(days=90)
@@ -417,18 +418,11 @@ def _process_cluster_data(c_raw, with_details=False, detail_results=None):
     eol_date = EKS_EOL_DATES.get(version)
 
     cluster_data = {
-        "name": c_raw.get("name"),
-        "arn": c_raw.get("arn"),
-        "account_id": c_raw.get("arn", "::::").split(':')[4],
-        "roleArn": c_raw.get("roleArn"),
-        "endpoint": c_raw.get("endpoint"),
-        "version": version,
-        "platformVersion": c_raw.get("platformVersion"),
-        "status": c_raw.get("status", "Unknown"),
-        "region": c_raw.get("region"),
-        "createdAt": c_raw.get("createdAt", now),
-        "tags": c_raw.get("tags", {}),
-        "health_issues": c_raw.get("health", {}).get("issues", []),
+        "name": c_raw.get("name"), "arn": c_raw.get("arn"), "account_id": c_raw.get("arn", "::::").split(':')[4],
+        "roleArn": c_raw.get("roleArn"), "endpoint": c_raw.get("endpoint"), "version": version,
+        "platformVersion": c_raw.get("platformVersion"), "status": c_raw.get("status", "Unknown"),
+        "region": c_raw.get("region"), "createdAt": c_raw.get("createdAt", now),
+        "tags": c_raw.get("tags", {}), "health_issues": c_raw.get("health", {}).get("issues", []),
         "health_status_summary": "HEALTHY" if not c_raw.get("health", {}).get("issues", []) else "HAS_ISSUES",
         "upgrade_insight_status": "PASSING" if version == "Unknown" or version >= "1.29" else "NEEDS_ATTENTION",
         "is_nearing_eol_90_days": bool(eol_date and now < eol_date <= ninety_days_from_now),
@@ -438,54 +432,35 @@ def _process_cluster_data(c_raw, with_details=False, detail_results=None):
     if with_details and detail_results:
         managed_nodegroups_raw = detail_results.get("nodegroups", [])
         karpenter_nodes_raw = []
-
         cluster_data["workloads"] = detail_results.get("workloads", {"error": "Workload data not fetched."})
         if not cluster_data["workloads"].get("error"):
             try:
-                 api_client = get_k8s_api_client(c_raw["name"], c_raw["endpoint"], c_raw["certificateAuthority"]["data"], c_raw["region"], detail_results.get("role_arn"))
-                 karpenter_nodes_raw = fetch_karpenter_nodes_for_cluster(client.CoreV1Api(api_client))
+                api_client = get_k8s_api_client(c_raw["name"], c_raw["endpoint"], c_raw["certificateAuthority"]["data"], c_raw["region"], detail_results.get("role_arn"))
+                karpenter_nodes_raw = fetch_karpenter_nodes_for_cluster(client.CoreV1Api(api_client))
             except Exception as e:
-                 logging.error(f"Failed to perform agentless node analysis for {c_raw['name']}: {e}")
-
-        processed_nodegroups = [{
-            "name": ng.get("nodegroupName"),
-            "status": ng.get("status"),
-            "amiType": ng.get("amiType"),
-            "instanceTypes": ng.get("instanceTypes", []),
-            "releaseVersion": ng.get("releaseVersion"),
-            "version": ng.get("version"),
-            "createdAt": ng.get("createdAt"),
-            "desiredSize": ng.get("scalingConfig", {}).get("desiredSize"),
-            "is_karpenter_node": False
-        } for ng in managed_nodegroups_raw]
+                logging.error(f"Failed to perform agentless node analysis for {c_raw['name']}: {e}")
+        
+        processed_nodegroups = [{"name": ng.get("nodegroupName"), "status": ng.get("status"), "amiType": ng.get("amiType"), "instanceTypes": ng.get("instanceTypes", []), "releaseVersion": ng.get("releaseVersion"), "version": ng.get("version"), "createdAt": ng.get("createdAt"), "desiredSize": ng.get("scalingConfig", {}).get("desiredSize"), "is_karpenter_node": False} for ng in managed_nodegroups_raw]
         processed_nodegroups.extend(karpenter_nodes_raw)
-
+        
         cluster_data.update({
-            "nodegroups_data": processed_nodegroups,
-            "addons": detail_results.get("addons", []),
-            "fargate_profiles": detail_results.get("fargate", []),
-            "security_insights": detail_results.get("security", {}),
-            "oidc_provider_url": fetch_oidc_provider_for_cluster(c_raw),
-            "networking": c_raw.get("resourcesVpcConfig", {}),
+            "nodegroups_data": processed_nodegroups, "addons": detail_results.get("addons", []),
+            "fargate_profiles": detail_results.get("fargate", []), "security_insights": detail_results.get("security", {}),
+            "oidc_provider_url": fetch_oidc_provider_for_cluster(c_raw), "networking": c_raw.get("resourcesVpcConfig", {}),
         })
-
     return cluster_data
 
 def get_live_eks_data():
-    # Scans all accounts/roles (if provided) and all AWS regions for EKS clusters
-    all_possible_roles = [
-        {'role_arn': r.strip(), 'id': r.strip().split(':')[4]}
-        for r in os.getenv("AWS_TARGET_ACCOUNTS_ROLES", "").split(',') if r.strip()
-    ]
+    """Scans all accounts/roles and regions for EKS clusters and returns processed data and a summary."""
+    all_possible_roles = [{'role_arn': r.strip(), 'id': r.strip().split(':')[4]} for r in os.getenv("AWS_TARGET_ACCOUNTS_ROLES", "").split(',') if r.strip()]
     try:
         primary_account_id = boto3.client('sts').get_caller_identity().get('Account')
         if not any(acc['id'] == primary_account_id for acc in all_possible_roles):
             all_possible_roles.append({'role_arn': None, 'id': primary_account_id})
     except Exception as e:
         logging.warning(f"Could not determine primary account ID from default credentials: {e}")
-
-    accounts_to_scan = all_possible_roles if all_possible_roles else [{'role_arn': None, 'id': primary_account_id}]
-
+    accounts_to_scan = all_possible_roles if all_possible_roles else [{'role_arn': None, 'id': 'default'}]
+    
     all_clusters_raw, errors = [], []
     with ThreadPoolExecutor(max_workers=30) as executor:
         describe_futures = {}
@@ -503,7 +478,7 @@ def get_live_eks_data():
                         describe_futures[future] = region
                 except Exception as e:
                     errors.append(f"Error listing clusters in {account['id']}/{region}: {e}")
-
+        
         for future in as_completed(describe_futures):
             region = describe_futures[future]
             try:
@@ -533,27 +508,26 @@ def get_single_cluster_details(account_id, region, cluster_name, role_arn=None):
     session = get_session(role_arn)
     if not session:
         return {"errors": [f"Failed to get session for account {account_id}."]}
-
     try:
         eks_client = session.client('eks', region_name=region)
         cluster_raw = eks_client.describe_cluster(name=cluster_name).get('cluster', {})
         if not cluster_raw:
             return {"errors": [f"Cluster {cluster_name} not found."]}
         cluster_raw['region'] = region
-
+        
         detail_results = {"role_arn": role_arn}
         with ThreadPoolExecutor(max_workers=5) as executor:
-            future_map = {}
-            future_map[executor.submit(fetch_managed_nodegroups, eks_client, cluster_name)] = "nodegroups"
-            future_map[executor.submit(fetch_addons_for_cluster, eks_client, cluster_name)] = "addons"
-            future_map[executor.submit(fetch_fargate_profiles_for_cluster, eks_client, cluster_name)] = "fargate"
-            future_map[executor.submit(get_security_insights, cluster_raw, eks_client)] = "security"
-
+            future_map = {
+                executor.submit(fetch_managed_nodegroups, eks_client, cluster_name): "nodegroups",
+                executor.submit(fetch_addons_for_cluster, eks_client, cluster_name): "addons",
+                executor.submit(fetch_fargate_profiles_for_cluster, eks_client, cluster_name): "fargate",
+                executor.submit(get_security_insights, cluster_raw, eks_client): "security"
+            }
             if cluster_raw.get("endpoint") and cluster_raw.get("certificateAuthority", {}).get("data"):
                 future_map[executor.submit(get_kubernetes_workloads_and_map, cluster_name, cluster_raw["endpoint"], cluster_raw["certificateAuthority"]["data"], region, role_arn)] = "workloads"
             else:
                 detail_results["workloads"] = {"error": "Cluster endpoint or certificate authority data is not available."}
-
+            
             for future in as_completed(future_map):
                 key = future_map[future]
                 try:
@@ -561,8 +535,10 @@ def get_single_cluster_details(account_id, region, cluster_name, role_arn=None):
                 except Exception as e:
                     logging.error(f"Error fetching detail '{key}' for cluster {cluster_name}: {e}", exc_info=True)
                     detail_results[key] = {"error": f"Failed to fetch {key}: {e}"}
-
-        return _process_cluster_data(cluster_raw, with_details=True, detail_results=detail_results)
+        
+        processed_data = _process_cluster_data(cluster_raw, with_details=True, detail_results=detail_results)
+        processed_data['certificateAuthority'] = cluster_raw.get('certificateAuthority')
+        return processed_data
     except Exception as e:
         logging.error(f"Error in get_single_cluster_details for {cluster_name}: {e}", exc_info=True)
         return {"name": cluster_name, "errors": [f"Error fetching details for cluster {cluster_name}: {e}"]}
