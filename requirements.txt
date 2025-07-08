@@ -38,7 +38,7 @@ jsonschema==4.10.3
 typing-inspection==0.4.1
 
 # Scientific & Math
-numpy==2.3.0
+numpy==2.2.0
 scipy==1.15.3
 
 # Type Annotations & Validation
