@@ -305,6 +305,7 @@ def fetch_oidc_provider_for_cluster(cluster_raw):
 
 def upgrade_nodegroup_version(account_id, region, cluster_name, nodegroup_name, role_arn=None):
     session = get_session(role_arn)
+    print(f'session---------------------------------------{session}')
     if not session: return {"error": f"Failed to get session for account {account_id}."}
     try:
         eks_client = session.client('eks', region_name=region)
