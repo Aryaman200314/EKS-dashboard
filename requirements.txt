@@ -21,7 +21,7 @@ jmespath==1.0.1
 kubernetes==33.1.0
 lxml==5.4.0
 MarkupSafe==3.0.2
-numpy==2.3.0
+numpy==2.2.0
 oauthlib==3.2.2
 packaging==25.0
 pyasn1==0.6.1
