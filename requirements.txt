@@ -73,3 +73,6 @@ pyasn1==0.6.1
 pyasn1_modules==0.4.2
 watchfiles==1.0.5
 uvloop==0.21.0
+
+#SQLAlchemy
+SQLAlchemy==2.0.41
