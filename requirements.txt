@@ -76,3 +76,6 @@ uvloop==0.21.0
 
 #SQLAlchemy
 SQLAlchemy==2.0.41
+
+# WebSocket Protocol Support
+wsproto==1.2.0
