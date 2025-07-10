@@ -1,41 +1,24 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyo
+*.pyd
 
-# SQLite database
+# SQLite DB
 *.db
 
-# AWS CLI bundles
+# AWS CLI bundle
 awscli-bundle/
 awscli-bundle.zip
 
-# Environment
-.env
-*.env
-
-# Logs
-*.log
-
-# Python virtual environments
-venv/
+# Virtual environments
 .env/
 .venv/
+venv/
 ENV/
-env.bak/
-env/
 
-# VS Code settings
-.vscode/
-
-# macOS
+# OS files
 .DS_Store
 
-# System files
-Thumbs.db
-
-
-aws
-awscli-bundle
-awscli-bundle.zip
-eks_dashboard.db
+# dotenv file
+.env
