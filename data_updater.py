@@ -14,7 +14,7 @@ async def update_all_data():
     db_session: Session = SessionLocal()
     logging.info("Starting background data update...")
     try:
-        raw_data = get_live_eks_data()
+        raw_data = get_live_eks_data(user_groups=["admin"], group_map_str="")
         if raw_data.get("errors"):
             logging.error(f"Errors during cluster discovery: {raw_data['errors']}")
 
