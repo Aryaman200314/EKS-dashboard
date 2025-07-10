@@ -145,8 +145,8 @@
                         <tr>
                             <td>{{ ng.name }}</td>
                             <td><span class="status-badge status-{{ ng.status.lower() if ng.status else 'unknown' }}">{{ ng.status }}</span></td>
-                            <td>{{ ng.desiredSize }}</td>
-                            <td>{{ ng.releaseVersion }}</td>
+                            <td>{{ ng.desired_size }}</td>
+                            <td>{{ ng.release_version }}</td>
                             <td>{{ ng.version }}</td>
                             <td>
                                 {% if not ng.is_karpenter_node and ng.version != cluster.version %}

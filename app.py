@@ -4,6 +4,10 @@ import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
 import json
+import threading
+import time
+from database import get_db, delete_old_request_logs
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect
@@ -61,7 +65,23 @@ async def lifespan(app: FastAPI):
     logging.info("Application shutting down...")
     scheduler.shutdown()
 
+def start_cleanup_thread():
+    def cleaner():
+        while True:
+            try:
+                with next(get_db()) as session:
+                    delete_old_request_logs(session)
+                    print("[CLEANUP] Old request logs deleted successfully.")
+            except Exception as e:
+                print(f"[CLEANUP ERROR] {e}")
+            time.sleep(86400)  # Sleep for 24 hours (86400 seconds)
+    
+    # Run the thread as a daemon so it doesn't block app shutdown
+    thread = threading.Thread(target=cleaner, daemon=True)
+    thread.start()
+
 app = FastAPI(title="EKS Operational Dashboard", lifespan=lifespan)
+start_cleanup_thread()  
 database.create_db_and_tables()
 
 # Middleware
@@ -230,6 +250,8 @@ async def stream_events(websocket: WebSocket, account_id: str, region: str, clus
         if w: w.stop()
         db_session.close()
         await websocket.close()
+
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

@@ -4,6 +4,8 @@ from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, Boolean, Text
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import func
+from datetime import timedelta
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./eks_dashboard.db")
 
@@ -90,6 +92,21 @@ class DataUpdateLog(Base):
     status = Column(String)
     details = Column(Text)
 
+
+class TrafficStats(Base):
+    __tablename__ = "traffic_stats"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    total_response_bytes = Column(Integer, nullable=False)
+
+class ArchivedTrafficStats(Base):
+    __tablename__ = "archived_traffic_stats"
+    id = Column(Integer, primary_key=True, index=True)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    total_response_bytes = Column(Integer, nullable=False)
+
+
 # --- DB Setup & Utils (unchanged) ---
 def create_db_and_tables(): Base.metadata.create_all(bind=engine)
 def get_db():
@@ -97,11 +114,47 @@ def get_db():
     try: yield db
     finally: db.close()
 def get_last_update_time(session: Session):
+    
     last_success = session.query(DataUpdateLog).filter(DataUpdateLog.status == 'SUCCESS').order_by(DataUpdateLog.timestamp.desc()).first()
     return last_success.timestamp if last_success else None
 def log_request(session: Session, method: str, url: str, client_ip: str, request_size: int, response_size: int, response_status: int):
     log_entry = RequestLog(method=method, url=url, client_ip=client_ip, request_size=request_size, response_size=response_size, response_status=response_status)
     session.add(log_entry)
+    session.commit()
+
+def log_total_response_size(session: Session):
+    total_size = session.query(func.sum(RequestLog.response_size)).scalar() or 0
+    entry = TrafficStats(total_response_bytes=total_size)
+    session.add(entry)
+    session.commit()
+
+def get_traffic_stats(session: Session, limit=10):
+    return session.query(TrafficStats).order_by(TrafficStats.timestamp.desc()).limit(limit).all()
+
+def delete_old_request_logs(session: Session, days: int = 7):
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(days=days)
+
+    # Sum the response_size of logs in the 7-day window
+    total_bytes = session.query(func.sum(RequestLog.response_size)).filter(
+        RequestLog.timestamp >= start_time,
+        RequestLog.timestamp < end_time
+    ).scalar() or 0
+
+    # Only archive if there's actual data
+    if total_bytes > 0:
+        archive_entry = ArchivedTrafficStats(
+            start_time=start_time,
+            end_time=end_time,
+            total_response_bytes=total_bytes
+        )
+        session.add(archive_entry)
+
+    # Delete old logs regardless of whether total_bytes > 0
+    session.query(RequestLog).filter(
+        RequestLog.timestamp >= start_time,
+        RequestLog.timestamp < end_time
+    ).delete()
     session.commit()
 
 # --- CRUD Operations ---
@@ -133,7 +186,11 @@ def update_cluster_data(session: Session, cluster_data: dict):
     elif isinstance(created_at, datetime):
         cluster.created_at = created_at
 
-    cluster.role_arn = cluster_data.get('roleArn', 'Null')
+    role_arn = cluster_data.get('roleArn')
+    if isinstance(role_arn, str):
+        cluster.role_arn = role_arn.replace('\n', ' ').strip()
+    else:
+        cluster.role_arn = None
     if cluster.role_arn and isinstance(cluster.role_arn, str):
         cluster.role_arn = cluster.role_arn.strip()
 
@@ -281,4 +338,3 @@ def get_cluster_details(session: Session, account_id: str, region: str, cluster_
         cluster_dict['workloads_error'] = None
 
     return cluster_dict
-

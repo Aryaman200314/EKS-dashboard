@@ -1,37 +1,41 @@
-# Python cache and artifacts
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*.egg-info/
+*$py.class
 
 # SQLite database
 *.db
 
-# AWS CLI bundle
+# AWS CLI bundles
 awscli-bundle/
 awscli-bundle.zip
 
-# Virtual environments and libraries
-venv/
-lib/
-lib64/
-env/
-ENV/
+# Environment
+.env
+*.env
 
 # Logs
 *.log
 
-# Credentials or local config
-*.pem
-*.key
-*.crt
+# Python virtual environments
+venv/
+.env/
+.venv/
+ENV/
+env.bak/
+env/
 
-# IDE/editor settings
+# VS Code settings
 .vscode/
-.idea/
 
-# Node or frontend (future-proof)
-node_modules/
+# macOS
+.DS_Store
 
 # System files
-.DS_Store
 Thumbs.db
+
+
+aws
+awscli-bundle
+awscli-bundle.zip
+eks_dashboard.db
