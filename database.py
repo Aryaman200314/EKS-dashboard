@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, Boolean, Text
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
@@ -110,20 +111,32 @@ def update_cluster_data(session: Session, cluster_data: dict):
         Cluster.region == cluster_data.get('region'),
         Cluster.name == cluster_data.get('name')
     ).first()
+
     if not cluster:
-        cluster = Cluster(name=cluster_data['name'], account_id=cluster_data['account_id'], region=cluster_data['region'])
+        cluster = Cluster(
+            name=cluster_data['name'],
+            account_id=cluster_data['account_id'],
+            region=cluster_data['region']
+        )
         session.add(cluster)
 
-    # Update cluster attributes
+    # --- Cluster attributes ---
     cluster.arn = cluster_data.get('arn')
     cluster.version = cluster_data.get('version')
     cluster.platform_version = cluster_data.get('platformVersion')
     cluster.endpoint = cluster_data.get('endpoint')
     cluster.status = cluster_data.get('status')
+
     created_at = cluster_data.get('createdAt')
-    if isinstance(created_at, str): cluster.created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-    elif isinstance(created_at, datetime): cluster.created_at = created_at
-    cluster.role_arn = cluster_data.get('roleArn')
+    if isinstance(created_at, str):
+        cluster.created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+    elif isinstance(created_at, datetime):
+        cluster.created_at = created_at
+
+    cluster.role_arn = cluster_data.get('roleArn', 'Null')
+    if cluster.role_arn and isinstance(cluster.role_arn, str):
+        cluster.role_arn = cluster.role_arn.strip()
+
     cluster.tags = cluster_data.get('tags')
     cluster.health_issues = cluster_data.get('health_issues')
     cluster.eks_auto_mode = cluster_data.get('eks_auto_mode')
@@ -131,14 +144,51 @@ def update_cluster_data(session: Session, cluster_data: dict):
     cluster.oidc_provider_url = cluster_data.get('oidc_provider_url')
     cluster.security_insights = cluster_data.get('security_insights')
     cluster.workloads = cluster_data.get('workloads')
+
     if cluster_data.get('certificateAuthority'):
         cluster.certificate_authority_data = cluster_data['certificateAuthority'].get('data')
+
     cluster.last_updated = datetime.utcnow()
 
-    # Efficiently update sub-resources
-    _update_sub_resources(session, cluster, 'nodegroups', 'name', cluster_data.get('nodegroups_data', []))
-    _update_sub_resources(session, cluster, 'addons', 'name', cluster_data.get('addons', []), lambda d: {'name': d.get('addonName'), **d})
-    _update_sub_resources(session, cluster, 'fargate_profiles', 'name', cluster_data.get('fargate_profiles', []))
+    # --- Subresources ---
+    _update_sub_resources(
+        session, cluster, 'nodegroups', 'name',
+        cluster_data.get('nodegroups_data', []),
+        lambda ng: {
+            'name': ng.get('name'),
+            'status': ng.get('status'),
+            'ami_type': ng.get('amiType'),
+            'instance_types': ng.get('instanceTypes'),
+            'release_version': ng.get('releaseVersion'),
+            'version': ng.get('version'),
+            'created_at': ng.get('createdAt'),
+            'desired_size': ng.get('desiredSize'),
+            'is_karpenter_node': ng.get('is_karpenter_node', False)
+        }
+    )
+
+    _update_sub_resources(
+        session, cluster, 'addons', 'name',
+        cluster_data.get('addons', []),
+        lambda a: {
+            'name': a.get('addonName'),
+            'version': a.get('addonVersion'),
+            'status': a.get('status'),
+            'pod_identity_display': a.get('pod_identity_display'),
+            'irsa_role_arn': a.get('irsa_role_arn')
+        }
+    )
+
+    _update_sub_resources(
+        session, cluster, 'fargate_profiles', 'name',
+        cluster_data.get('fargate_profiles', [])
+    )
+
+    # --- Debug print for verification ---
+    print("[DEBUG] Final Cluster object before commit:")
+    print("  role_arn:", cluster.role_arn)
+    print("  nodegroups:", json.dumps(cluster_data.get('nodegroups_data', []), indent=2, default=str))
+    print("  addons:", json.dumps(cluster_data.get('addons', []), indent=2, default=str))
 
     session.commit()
     session.refresh(cluster)
@@ -185,27 +235,50 @@ def get_all_clusters_summary(session: Session):
 
 def get_cluster_details(session: Session, account_id: str, region: str, cluster_name: str):
     cluster = session.query(Cluster).options(
-        joinedload(Cluster.nodegroups), joinedload(Cluster.addons), joinedload(Cluster.fargate_profiles)
-    ).filter(Cluster.account_id == account_id, Cluster.region == region, Cluster.name == cluster_name).first()
+        joinedload(Cluster.nodegroups),
+        joinedload(Cluster.addons),
+        joinedload(Cluster.fargate_profiles)
+    ).filter(
+        Cluster.account_id == account_id,
+        Cluster.region == region,
+        Cluster.name == cluster_name
+    ).first()
 
-    if not cluster: return None
+    if not cluster:
+        return None
 
-    # Exclude the 'workloads' field from the initial dictionary.
-    cluster_dict = {key: getattr(cluster, key) for key in cluster.__table__.columns.keys() if key != 'workloads'}
-    
+    # Exclude the 'workloads' field from the bulk dict for custom handling
+    cluster_dict = {
+        key: getattr(cluster, key)
+        for key in cluster.__table__.columns.keys()
+        if key != 'workloads'
+    }
+
     cluster_dict['createdAt'] = cluster.created_at
     cluster_dict['certificateAuthority'] = {'data': cluster.certificate_authority_data}
     cluster_dict['nodegroups_data'] = [vars(ng) for ng in cluster.nodegroups]
-    cluster_dict['addons'] = [{'addonName': a.name, 'addonVersion': a.version, 'status': a.status,
-                              'pod_identity_display': a.pod_identity_display, 'irsa_role_arn': a.irsa_role_arn} for a in cluster.addons]
-    cluster_dict['fargate_profiles'] = [{'name': f.name, 'status': f.status} for f in cluster.fargate_profiles]
-    
-    # FIX: Always define the 'workloads_error' key.
-    # Set it to the error message if one exists, otherwise set it to None.
-    # This prevents the Jinja 'Undefined' error.
+    cluster_dict['addons'] = [
+        {
+            'addonName': a.name,
+            'addonVersion': a.version,
+            'status': a.status,
+            'pod_identity_display': a.pod_identity_display,
+            'irsa_role_arn': a.irsa_role_arn
+        } for a in cluster.addons
+    ]
+    cluster_dict['fargate_profiles'] = [
+        {'name': f.name, 'status': f.status}
+        for f in cluster.fargate_profiles
+    ]
+
+    # Workloads
+    cluster_dict['workloads'] = cluster.workloads
+
+    # Error handling for UI
     if cluster.workloads and cluster.workloads.get('error'):
         cluster_dict['workloads_error'] = cluster.workloads.get('error')
     else:
         cluster_dict['workloads_error'] = None
 
     return cluster_dict
+

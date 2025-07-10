@@ -1,4 +1,37 @@
-awscliv2.zip
-venv
-awscli-bundle
-aws
+# Python cache and artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# SQLite database
+*.db
+
+# AWS CLI bundle
+awscli-bundle/
+awscli-bundle.zip
+
+# Virtual environments and libraries
+venv/
+lib/
+lib64/
+env/
+ENV/
+
+# Logs
+*.log
+
+# Credentials or local config
+*.pem
+*.key
+*.crt
+
+# IDE/editor settings
+.vscode/
+.idea/
+
+# Node or frontend (future-proof)
+node_modules/
+
+# System files
+.DS_Store
+Thumbs.db

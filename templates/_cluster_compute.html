@@ -92,8 +92,8 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% if cluster.workloads and cluster.workloads.nodes %}
-                            {% for node in cluster.workloads.nodes %}
+                        {% if cluster.workloads and 'nodes' in cluster.workloads and cluster.workloads['nodes'] %}
+                            {% for node in cluster.workloads['nodes'] %}
                                 {% set labels = node.metadata.labels or {} %}
                                 {% set nodegroup_name = labels.get('eks.amazonaws.com/nodegroup') %}
                                 {% set is_karpenter_or_auto = 'karpenter.sh/provisioner-name' in labels or labels.get('eks.amazonaws.com/compute-type') == 'ec2' %}
